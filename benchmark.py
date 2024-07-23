@@ -29,8 +29,8 @@ for i in [1, 2, 4, 6]:
     # compile custom func and gqa_custom
     mqa_attn = torch.ops.mylib.custom_func
     gqa_attn = torch.ops.mylib.gqa_custom
-    mqa_attn = torch.compile(mqa_attn, mode="reduce-overhead", fullgraph=True)
-    gqa_attn = torch.compile(gqa_attn, mode="reduce-overhead", fullgraph=True)
+    # mqa_attn = torch.compile(mqa_attn, mode="reduce-overhead", fullgraph=True)
+    # gqa_attn = torch.compile(gqa_attn, mode="reduce-overhead", fullgraph=True)
 
     with torch.device('cuda'):
         print(f"dec len: {i}")
@@ -43,7 +43,7 @@ for i in [1, 2, 4, 6]:
 
     # warm up
     for _ in range(100):
-        mqa_attn(q1, K1, V1, k=None, v=None, cache_seqlens=None)
+        mqa_attn(q1, K1, V1, k=k1, v=v1, cache_seqlens=seqlen1)
 
    
 
@@ -52,14 +52,18 @@ for i in [1, 2, 4, 6]:
 
     
     for _ in range(1000):
-            mqa_attn(q1, K1, V1, k=None, v=None, cache_seqlens=None)
+            mqa_attn(q1, K1, V1, k=k1, v=v1, cache_seqlens=seqlen1)
 
     torch.cuda.synchronize()
     t2 = time.perf_counter()
 
     print(f"Avg time taken for custom_func: {t2 - t1:.3f} ms")
 
-    
+    prof = torch.profiler.profile(profile_memory=False, with_stack=False, with_flops=False, with_modules=False)
+    with prof:
+        mqa_attn(q1, K1, V1, k=k1, v=v1, cache_seqlens=seqlen1)
+
+    prof.export_chrome_trace(f"mqa_P{P1}_B{B}_i{i}.json")
 
     del q1, K1, V1, k1, v1, seqlen1
     torch.cuda.empty_cache()
@@ -88,8 +92,15 @@ for i in [1, 2, 4, 6]:
     torch.cuda.synchronize()
     t2 = time.perf_counter()
 
+
+
     print(f"Avg time taken for gqa_custom: {t2 - t1:.3f} ms")
 
+    prof = torch.profiler.profile(profile_memory=False, with_stack=False, with_flops=False, with_modules=False)
+    with prof:
+        gqa_attn(q2, K2, V2, k=k2, v=v2, cache_seqlens=seqlen2)
+
+    prof.export_chrome_trace(f"gqa_P{P2}_B{B}_i{i}.json")
     
     del q2, K2, V2, k2, v2, seqlen2
     torch.cuda.empty_cache()
@@ -117,3 +128,12 @@ for i in [1, 2, 4, 6]:
     t2 = time.perf_counter()
 
     print(f"Avg time taken for custom_func: {t2 - t1:.3f} ms")
+
+    prof = torch.profiler.profile(profile_memory=False, with_stack=False, with_flops=False, with_modules=False)
+    with prof:
+        mqa_attn(q3, K3, V3, k=None, v=None, cache_seqlens=None)
+
+    prof.export_chrome_trace(f"flattened_mqa_P{P2}_B{B}_i{i}.json")
+
+    del q3, K3, V3, seqlen3
+    torch.cuda.empty_cache()
